@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+**/__pycache__/
+
+venv/
+frontend/node_modules/
+frontend/build/
+
+# Keep the compressed deploy-safe file instead of the 100MB+ CSV.
+DATASETS/processed/unified_drug_features.csv
+
+# Local runtime artifacts
+*.log
+*.pid
+/.gunicorn/

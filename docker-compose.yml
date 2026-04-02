@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  graphrxinsight:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: graphrxinsight
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+    volumes:
+      - ./models:/app/models
+      - ./DATASETS:/app/DATASETS
+    restart: unless-stopped
