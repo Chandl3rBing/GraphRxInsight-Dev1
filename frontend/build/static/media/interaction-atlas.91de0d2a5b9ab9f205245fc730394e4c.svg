@@ -1,0 +1,45 @@
+<svg width="640" height="460" viewBox="0 0 640 460" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="atlas-bg" x1="76" y1="40" x2="563" y2="427" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D8FFF5"/>
+      <stop offset="1" stop-color="#B9D8FF"/>
+    </linearGradient>
+    <linearGradient id="atlas-pill" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D7F9F0"/>
+    </linearGradient>
+    <filter id="atlas-shadow" x="64" y="58" width="512" height="338" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#0A2846" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="460" rx="40" fill="url(#atlas-bg)"/>
+  <circle cx="537" cy="90" r="74" fill="#FFFFFF" fill-opacity="0.42"/>
+  <circle cx="104" cy="373" r="92" fill="#FFFFFF" fill-opacity="0.24"/>
+
+  <g filter="url(#atlas-shadow)">
+    <rect x="94" y="82" width="452" height="290" rx="34" fill="#F9FCFF"/>
+  </g>
+
+  <rect x="126" y="114" width="168" height="90" rx="24" fill="#E5FFF7"/>
+  <rect x="313" y="114" width="201" height="90" rx="24" fill="#EAF3FF"/>
+  <rect x="126" y="224" width="388" height="116" rx="28" fill="#0F2740"/>
+
+  <path d="M190 269C221.667 248.333 252.667 242.333 283 251C313.333 259.667 343.667 280 374 277C404.333 274 434.667 244 465 236" stroke="#76F0D4" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="190" cy="269" r="12" fill="#76F0D4"/>
+  <circle cx="283" cy="251" r="12" fill="#8AB7FF"/>
+  <circle cx="374" cy="277" r="12" fill="#76F0D4"/>
+  <circle cx="465" cy="236" r="12" fill="#8AB7FF"/>
+
+  <rect x="155" y="138" width="110" height="44" rx="22" fill="url(#atlas-pill)"/>
+  <path d="M210 138V182" stroke="#86DCC8" stroke-width="4"/>
+  <rect x="337" y="138" width="150" height="16" rx="8" fill="#BCD4F7"/>
+  <rect x="337" y="164" width="108" height="12" rx="6" fill="#D5E5FB"/>
+
+  <path d="M181 309C203.833 282.833 226.667 269.833 249.5 270C272.333 270.167 295.167 291.333 318 310.5C340.833 329.667 363.667 346.833 386.5 344.5C409.333 342.167 432.167 320.333 455 279" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="3" stroke-dasharray="8 10"/>
+
+  <circle cx="408" cy="153" r="27" fill="#FFFFFF"/>
+  <circle cx="408" cy="153" r="12" fill="#89B7FF"/>
+  <circle cx="455" cy="153" r="12" fill="#76F0D4"/>
+  <path d="M420 153H443" stroke="#88AEE6" stroke-width="4" stroke-linecap="round"/>
+</svg>

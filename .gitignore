@@ -4,7 +4,6 @@ __pycache__/
 
 venv/
 frontend/node_modules/
-frontend/build/
 
 # Keep the compressed deploy-safe file instead of the 100MB+ CSV.
 DATASETS/processed/unified_drug_features.csv
