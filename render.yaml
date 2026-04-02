@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: graphrxinsight
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    autoDeployTrigger: commit
+    healthCheckPath: /dynamic/status
+    envVars:
+      - key: PORT
+        value: "5001"

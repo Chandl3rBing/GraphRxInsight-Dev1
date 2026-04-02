@@ -1,0 +1,20 @@
+.git
+.gitignore
+.DS_Store
+.vscode
+venv
+__pycache__
+**/__pycache__
+
+frontend/node_modules
+frontend/build
+
+APPLICATION BLUEPRINT.png
+PIPELINE.png
+GraphRxInsight Vnull.pptx
+CONFERENCE PPT V2.pptx
+Base paper.pdf
+
+notebooks
+results
+src
