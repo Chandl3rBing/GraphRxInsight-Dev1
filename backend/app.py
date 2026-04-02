@@ -1,11 +1,12 @@
 from collections import Counter
+import csv
+import gzip
 import os
 import re
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -40,6 +41,15 @@ EMBEDDINGS_DISPLAY_PATH = "DATASETS/processed/drug_embeddings.pt"
 
 MIN_DYNAMIC_TRAIN_SAMPLES = 8
 AUTO_DYNAMIC_RETRAIN_THRESHOLD = 100
+SIDE_EFFECT_SOURCE_COLUMNS = [
+    "description",
+    "toxicity",
+    "mechanism-of-action",
+    "pharmacodynamics",
+    "indication",
+    "absorption",
+]
+RAW_DRUGBANK_COLUMNS = ["drugbank-id", "name", *SIDE_EFFECT_SOURCE_COLUMNS]
 
 
 def resolve_feature_file():
@@ -54,64 +64,163 @@ def resolve_feature_file():
     )
 
 
+def open_maybe_gzip(path):
+    if str(path).endswith(".gz"):
+        return gzip.open(path, "rt", encoding="utf-8", newline="")
+    return open(path, "r", encoding="utf-8", newline="")
+
+
+def safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def load_feature_mapping(feature_file):
+    with open_maybe_gzip(feature_file) as handle:
+        reader = csv.reader(handle)
+        header = next(reader, None)
+        if not header:
+            raise ValueError(f"Feature file is empty: {feature_file}")
+        if "drug_id" not in header:
+            raise ValueError("Feature file must contain a 'drug_id' column.")
+        drug_id_index = header.index("drug_id")
+        feature_dim = len(header) - 1
+
+        row_count = 0
+        for row in reader:
+            if not row:
+                continue
+            if len(row) <= drug_id_index:
+                continue
+            if str(row[drug_id_index]).strip():
+                row_count += 1
+
+    if row_count == 0:
+        raise ValueError("No valid feature rows were loaded from the feature file.")
+
+    feature_ids = [""] * row_count
+    feature_vectors = np.empty((row_count, feature_dim), dtype=np.float16)
+
+    with open_maybe_gzip(feature_file) as handle:
+        reader = csv.reader(handle)
+        next(reader, None)  # skip header
+        write_index = 0
+
+        for row in reader:
+            if not row:
+                continue
+
+            if len(row) < feature_dim + 1:
+                row = row + [""] * (feature_dim + 1 - len(row))
+
+            drug_id = str(row[drug_id_index]).strip()
+            if not drug_id:
+                continue
+
+            values = [safe_float(value) for i, value in enumerate(row) if i != drug_id_index]
+            feature_ids[write_index] = drug_id
+            feature_vectors[write_index] = np.asarray(values, dtype=np.float16)
+            write_index += 1
+
+    return feature_ids[:write_index], feature_vectors[:write_index]
+
+
+def normalize_drugbank_row(raw_row):
+    row = {}
+    for column in RAW_DRUGBANK_COLUMNS:
+        row[column] = str(raw_row.get(column, "") or "")
+
+    row["drugbank-id"] = row["drugbank-id"].strip()
+    row["name"] = row["name"].strip()
+    return row
+
+
+def row_content_score(row):
+    return sum(len(str(row.get(column, "")).strip()) for column in SIDE_EFFECT_SOURCE_COLUMNS)
+
+
+def normalize_lookup_text(text):
+    return re.sub(r"[^a-z0-9]+", " ", str(text).lower()).strip()
+
+
+def initialize_drugbank_structures(path, id_to_index):
+    drugbank_by_id = {}
+    name_to_id = {}
+    alias_to_id = {}
+    drug_search_rows = []
+
+    with open(path, "r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for raw_row in reader:
+            row = normalize_drugbank_row(raw_row)
+            drug_id = row["drugbank-id"]
+            if not drug_id:
+                continue
+
+            name = row["name"]
+            if name:
+                normalized_name = normalize_lookup_text(name)
+                if normalized_name and normalized_name not in name_to_id:
+                    name_to_id[normalized_name] = drug_id
+                if normalized_name and drug_id in id_to_index:
+                    drug_search_rows.append(
+                        {
+                            "drug_id": drug_id,
+                            "name": name,
+                            "normalized_name": normalized_name,
+                        }
+                    )
+
+            description = str(row.get("description", ""))
+            for alias in re.findall(r"also known as _([^_]+)_", description, flags=re.IGNORECASE):
+                normalized_alias = normalize_lookup_text(alias)
+                if normalized_alias and normalized_alias not in alias_to_id:
+                    alias_to_id[normalized_alias] = drug_id
+
+            content_score = row_content_score(row)
+            existing = drugbank_by_id.get(drug_id)
+            if existing is None or content_score > existing["_content_score"]:
+                stored_row = dict(row)
+                stored_row["_content_score"] = content_score
+                drugbank_by_id[drug_id] = stored_row
+
+    for row in drugbank_by_id.values():
+        row.pop("_content_score", None)
+
+    deduped_search_rows = []
+    seen_search_keys = set()
+    for row in sorted(drug_search_rows, key=lambda item: item["name"].lower()):
+        key = (row["drug_id"], row["normalized_name"])
+        if key in seen_search_keys:
+            continue
+        seen_search_keys.add(key)
+        deduped_search_rows.append(row)
+
+    return drugbank_by_id, name_to_id, alias_to_id, deduped_search_rows
+
+
 print("Loading drug feature mapping...")
 
 FEATURE_FILE = resolve_feature_file()
-features_df = pd.read_csv(FEATURE_FILE)
 print(f"Feature source: {os.path.relpath(FEATURE_FILE, os.path.join(BASE_DIR, '..'))}")
-valid_rows = features_df[features_df["drug_id"].notna()].copy()
-valid_rows["drug_id"] = valid_rows["drug_id"].astype(str).str.strip()
 
-feature_vectors = valid_rows.drop(columns=["drug_id"]).values.astype(np.float32)
-feature_ids = valid_rows["drug_id"].tolist()
+feature_ids, feature_vectors = load_feature_mapping(FEATURE_FILE)
 
 id_to_index = {}
 for idx, drug_id in enumerate(feature_ids):
     id_to_index[drug_id] = idx
     id_to_index[drug_id.lower()] = idx
 
-raw_drugbank_df = pd.read_csv(RAW_DRUGBANK_FILE, low_memory=False).fillna("")
-raw_drugbank_df["drugbank-id"] = raw_drugbank_df["drugbank-id"].astype(str).str.strip()
-raw_drugbank_df["name"] = raw_drugbank_df["name"].astype(str).str.strip()
-
-for column in [
-    "description",
-    "toxicity",
-    "mechanism-of-action",
-    "pharmacodynamics",
-    "indication",
-    "absorption",
-]:
-    if column not in raw_drugbank_df.columns:
-        raw_drugbank_df[column] = ""
-
-# Some DrugBank IDs appear more than once; keep the row with the richest textual content.
-side_effect_source_columns = [
-    "description",
-    "toxicity",
-    "mechanism-of-action",
-    "pharmacodynamics",
-    "indication",
-    "absorption",
-]
-raw_drugbank_df["_content_score"] = raw_drugbank_df[side_effect_source_columns].astype(str).apply(
-    lambda col: col.str.strip().str.len()
-).sum(axis=1)
-
-drugbank_by_id = (
-    raw_drugbank_df.sort_values(["drugbank-id", "_content_score"], ascending=[True, False])
-    .drop_duplicates(subset=["drugbank-id"], keep="first")
-    .drop(columns=["_content_score"])
-    .set_index("drugbank-id")
+drugbank_by_id, name_to_id, alias_to_id, drug_search_rows = initialize_drugbank_structures(
+    RAW_DRUGBANK_FILE, id_to_index
 )
+
 gnn_embeddings = torch.load(EMBEDDINGS_PATH, map_location="cpu")
 gnn_embedding_dim = int(gnn_embeddings.shape[1])
 
-print(f"Loaded {len(id_to_index) // 2} drug feature vectors")
-
-name_to_id = {}
-alias_to_id = {}
-drug_search_rows = []
+print(f"Loaded {len(feature_ids)} drug feature vectors")
 
 SIDE_EFFECT_KEYWORDS = [
     "nausea",
@@ -160,7 +269,7 @@ SIDE_EFFECT_KEYWORDS = [
 
 
 def normalize_text(text):
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    return normalize_lookup_text(text)
 
 
 def clean_text(text):
@@ -208,14 +317,14 @@ def extract_side_effects_full(row):
 
 
 def build_side_effect_summary(drug_id):
-    if drug_id not in drugbank_by_id.index:
+    if drug_id not in drugbank_by_id:
         return {"drug_id": drug_id, "name": None, "effects": []}
 
-    row = drugbank_by_id.loc[drug_id]
+    row = drugbank_by_id[drug_id]
     return {
         "drug_id": drug_id,
         "name": row.get("name", ""),
-        "effects": extract_side_effects_full(row),
+        "effects": row.get("effects", []),
     }
 
 
@@ -227,39 +336,12 @@ def build_overlap_summary(drug1_summary, drug2_summary):
     }
 
 
-for _, row in raw_drugbank_df.iterrows():
-    drug_id = row["drugbank-id"]
-    name = row["name"]
-    if name:
-        normalized = normalize_text(name)
-        if normalized and normalized not in name_to_id:
-            name_to_id[normalized] = drug_id
-        if normalized and drug_id in id_to_index:
-            drug_search_rows.append(
-                {
-                    "drug_id": drug_id,
-                    "name": name,
-                    "normalized_name": normalized,
-                }
-            )
-
-    description = str(row.get("description", ""))
-    for alias in re.findall(r"also known as _([^_]+)_", description, flags=re.IGNORECASE):
-        normalized_alias = normalize_text(alias)
-        if normalized_alias and normalized_alias not in alias_to_id:
-            alias_to_id[normalized_alias] = drug_id
-
-deduped_search_rows = []
-seen_search_keys = set()
-
-for row in sorted(drug_search_rows, key=lambda item: item["name"].lower()):
-    key = (row["drug_id"], row["normalized_name"])
-    if key in seen_search_keys:
-        continue
-    seen_search_keys.add(key)
-    deduped_search_rows.append(row)
-
-drug_search_rows = deduped_search_rows
+# Collapse heavy text rows into a compact side-effect summary per drug.
+for drug_id, row in list(drugbank_by_id.items()):
+    drugbank_by_id[drug_id] = {
+        "name": row.get("name", ""),
+        "effects": extract_side_effects_full(row),
+    }
 
 print(f"Loaded {len(name_to_id)} raw drug names and {len(alias_to_id)} aliases")
 
@@ -658,13 +740,14 @@ def search_drugs():
         for alias, drug_id in alias_to_id.items():
             if not (alias.startswith(normalized_query) or normalized_query in alias):
                 continue
-            if drug_id not in drugbank_by_id.index:
+            if drug_id not in drugbank_by_id:
                 continue
+            drug_name = drugbank_by_id[drug_id].get("name", "")
             alias_matches.append(
                 {
                     "drug_id": drug_id,
-                    "name": drugbank_by_id.loc[drug_id]["name"],
-                    "normalized_name": normalize_text(drugbank_by_id.loc[drug_id]["name"]),
+                    "name": drug_name,
+                    "normalized_name": normalize_text(drug_name),
                 }
             )
 
