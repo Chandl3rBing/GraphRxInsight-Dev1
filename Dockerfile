@@ -19,4 +19,4 @@ COPY frontend/build ./frontend/build
 
 EXPOSE 5001
 
-CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:5001", "--timeout", "300", "backend.app:app"]
+CMD ["sh", "-c", "gunicorn --workers 1 --bind 0.0.0.0:${PORT:-5001} --timeout 300 backend.app:app"]
