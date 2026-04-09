@@ -12,3 +12,15 @@ DATASETS/processed/unified_drug_features.csv
 *.log
 *.pid
 /.gunicorn/
+
+# Oversized local artifacts (keep local, do not track)
+DATASETS/processed/X_scaled.npy
+DATASETS/processed/X_hard_chunk_0.npy
+DATASETS/processed/X_hard_chunk_0_scaled.npy
+DATASETS/processed/X_pca.npy
+DATASETS/processed/bio_features.csv
+DATASETS/processed/bio_features_clean.csv
+DATASETS/processed/bio_features_pca.csv
+models/rf_final.pkl
+models/rf_pca.pkl
+GraphRxInsight Vnull.pptx
